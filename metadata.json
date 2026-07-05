@@ -1,0 +1,6 @@
+{
+  "name": "T-Shirt Program 2026",
+  "description": "Batch T-Shirt Application and Management System for AURORAS-25.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
