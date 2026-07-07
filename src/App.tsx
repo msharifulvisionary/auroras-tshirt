@@ -13,6 +13,7 @@ import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import TrackStatus from './pages/TrackStatus';
 import ScrollToTop from './components/ScrollToTop';
+import PublicGuard from './components/PublicGuard';
 
 function Layout() {
   return (
@@ -32,9 +33,14 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
-          <Route index element={<Home />} />
-          <Route path="apply" element={<ApplicationForm />} />
-          <Route path="track" element={<TrackStatus />} />
+          {/* Protected Public Routes */}
+          <Route element={<PublicGuard />}>
+            <Route index element={<Home />} />
+            <Route path="apply" element={<ApplicationForm />} />
+            <Route path="track" element={<TrackStatus />} />
+          </Route>
+
+          {/* Admin Routes */}
           <Route path="admin" element={<AdminLogin />} />
           <Route path="admin/dashboard" element={<AdminDashboard />} />
         </Route>
