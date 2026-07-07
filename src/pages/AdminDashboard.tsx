@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { ref, onValue, update, remove, set, push } from 'firebase/database';
-import { Application, Settings, defaultSettings, Expense } from '../types';
-import { Trash2, Edit, CheckCircle, MessageCircle, Copy, Download, Save, X, Image as ImageIcon, Plus, Search, FileText } from 'lucide-react';
+import { Application, Settings, defaultSettings, Expense, StudentQuery } from '../types';
+import { Trash2, Edit, CheckCircle, MessageCircle, Copy, Download, Save, X, Image as ImageIcon, Plus, Search, FileText, TrendingUp, MailOpen, Mail, HelpCircle, Check, MessageSquare } from 'lucide-react';
 import { toPng } from 'html-to-image';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ export default function AdminDashboard() {
   const [editingApp, setEditingApp] = useState<Application | null>(null);
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [studentQueries, setStudentQueries] = useState<StudentQuery[]>([]);
   const [newExpense, setNewExpense] = useState({ name: '', amount: '' });
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
@@ -27,6 +29,22 @@ export default function AdminDashboard() {
   const [filterSize, setFilterSize] = useState('ALL');
   const [activeTokenApp, setActiveTokenApp] = useState<Application | null>(null);
   const [activeReceiptApp, setActiveReceiptApp] = useState<Application | null>(null);
+
+  const findMatchingApplication = (roll: string) => {
+    if (!roll || roll === 'N/A') return null;
+    return applications.find(app => app.roll.trim().toLowerCase() === roll.trim().toLowerCase());
+  };
+
+  const formatQueryDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleString('bn-BD', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
 
   useEffect(() => {
     if (localStorage.getItem('isAdminLoggedIn') !== 'true') {
@@ -70,15 +88,33 @@ export default function AdminDashboard() {
       }
     });
 
+    const queriesRefDb = ref(db, 'faq_questions');
+    const unsubscribeQueries = onValue(queriesRefDb, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const queryList: StudentQuery[] = Object.keys(data).map(key => ({
+          ...data[key],
+          id: key
+        }));
+        setStudentQueries(queryList.sort((a, b) => b.timestamp - a.timestamp));
+      } else {
+        setStudentQueries([]);
+      }
+    });
+
     return () => {
       unsubscribeApps();
       unsubscribeSettings();
       unsubscribeExpenses();
+      unsubscribeQueries();
     };
   }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('isAdminLoggedIn');
+    localStorage.removeItem('isAdminMenuUnlocked');
+    sessionStorage.removeItem('isAdminMenuUnlocked');
+    window.dispatchEvent(new Event('admin-menu-unlocked-event'));
     navigate('/admin');
   };
 
@@ -91,6 +127,18 @@ export default function AdminDashboard() {
     if (window.confirm('আপনি কি নিশ্চিত যে এই আবেদনটি ডিলিট করতে চান?')) {
       const appRef = ref(db, `applications/${id}`);
       await remove(appRef);
+    }
+  };
+
+  const handleToggleQueryReplied = async (id: string, currentReplied: boolean) => {
+    const queryRef = ref(db, `faq_questions/${id}`);
+    await update(queryRef, { replied: !currentReplied });
+  };
+
+  const handleDeleteQuery = async (id: string) => {
+    if (window.confirm('আপনি কি নিশ্চিত যে এই জিজ্ঞাসাটি ডিলিট করতে চান?')) {
+      const queryRef = ref(db, `faq_questions/${id}`);
+      await remove(queryRef);
     }
   };
 
@@ -119,7 +167,69 @@ export default function AdminDashboard() {
   const confirmedApps = applications.filter(a => a.status === 'confirmed');
   const confirmedHalf = confirmedApps.filter(a => a.sleeve === 'HALF').length;
   const confirmedFull = confirmedApps.filter(a => a.sleeve === 'FULL').length;
-  const totalMoneyCollected = (confirmedHalf * settings.priceHalf) + (confirmedFull * settings.priceFull);
+  
+  const totalMoneyCollected = confirmedApps.reduce((acc, app) => {
+    const paid = app.amountPaid !== undefined && app.amountPaid !== null
+      ? app.amountPaid
+      : (app.sleeve === 'HALF' ? settings.priceHalf : settings.priceFull);
+    return acc + paid;
+  }, 0);
+
+  // Group money collected by payment method
+  const paymentMethodStats = confirmedApps.reduce((acc, app) => {
+    const method = app.paymentMethod || 'CASH';
+    const paid = app.amountPaid !== undefined && app.amountPaid !== null
+      ? app.amountPaid
+      : (app.sleeve === 'HALF' ? settings.priceHalf : settings.priceFull);
+    acc[method] = (acc[method] || 0) + paid;
+    return acc;
+  }, {} as Record<string, number>);
+
+  // Daily revenue trend calculation for Recharts
+  const sortedConfirmedApps = [...confirmedApps].sort((a, b) => a.createdAt - b.createdAt);
+  const dailyGroups: Record<string, Record<string, number>> = {};
+  const uniqueDatesOrdered: string[] = [];
+
+  sortedConfirmedApps.forEach(app => {
+    const dateStr = new Date(app.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const method = app.paymentMethod || 'CASH';
+    const amount = app.amountPaid !== undefined && app.amountPaid !== null
+      ? app.amountPaid
+      : (app.sleeve === 'HALF' ? settings.priceHalf : settings.priceFull);
+
+    if (!dailyGroups[dateStr]) {
+      dailyGroups[dateStr] = {};
+    }
+    dailyGroups[dateStr][method] = (dailyGroups[dateStr][method] || 0) + amount;
+
+    if (!uniqueDatesOrdered.includes(dateStr)) {
+      uniqueDatesOrdered.push(dateStr);
+    }
+  });
+
+  const uniquePaymentMethods = Array.from(new Set(
+    confirmedApps.map(app => app.paymentMethod || 'CASH')
+  )) as string[];
+
+  const chartData = uniqueDatesOrdered.map(date => {
+    const methods = dailyGroups[date];
+    const dataRow: Record<string, any> = { date };
+    uniquePaymentMethods.forEach(m => {
+      dataRow[m] = methods[m] || 0;
+    });
+    return dataRow;
+  });
+
+  const getPaymentMethodColor = (method: string, index: number) => {
+    const lower = method.toLowerCase();
+    if (lower.includes('bkash')) return '#ec4899'; // pink
+    if (lower.includes('nagad')) return '#f97316'; // orange
+    if (lower.includes('rocket')) return '#a855f7'; // purple
+    if (lower.includes('cash')) return '#64748b'; // slate
+    const colors = ['#3b82f6', '#10b981', '#06b6d4', '#84cc16', '#eab308'];
+    return colors[index % colors.length];
+  };
+
   const totalExpensesAmount = expenses.reduce((acc, exp) => acc + exp.amount, 0);
   const remainingBalance = totalMoneyCollected - totalExpensesAmount;
 
@@ -328,9 +438,21 @@ export default function AdminDashboard() {
             <p className="text-slate-500 text-sm font-semibold">ফুল স্লিভ (কনফার্ম)</p>
             <p className="text-2xl font-bold text-slate-800">{confirmedFull}</p>
           </div>
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-            <p className="text-slate-500 text-sm font-semibold">টাকা উঠেছে</p>
-            <p className="text-2xl font-bold text-green-600">৳ {totalMoneyCollected}</p>
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
+            <div>
+              <p className="text-slate-500 text-sm font-semibold">টাকা উঠেছে</p>
+              <p className="text-2xl font-bold text-green-600">৳ {totalMoneyCollected}</p>
+            </div>
+            {Object.keys(paymentMethodStats).length > 0 && (
+              <div className="mt-3 pt-2 border-t border-slate-100 space-y-1">
+                {Object.entries(paymentMethodStats).map(([method, amount]) => (
+                  <div key={method} className="flex justify-between text-[11px] font-bold text-slate-500">
+                    <span className="uppercase">{method}:</span>
+                    <span className="text-slate-700">৳ {amount}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
             <p className="text-slate-500 text-sm font-semibold">মোট খরচ</p>
@@ -340,6 +462,67 @@ export default function AdminDashboard() {
             <p className="text-slate-500 text-sm font-semibold">অবশিষ্ট আছে</p>
             <p className="text-2xl font-bold text-blue-600">৳ {remainingBalance}</p>
           </div>
+        </div>
+
+        {/* Daily Revenue Bar Chart */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4">
+          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+            <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+              <TrendingUp size={20} />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-800">দৈনিক পেমেন্ট সংগ্রহ ট্রেন্ড (Daily Revenue Trend)</h2>
+              <p className="text-slate-400 text-xs mt-0.5">সব পেমেন্ট চ্যানেল থেকে সংগৃহীত দৈনিক টাকা ট্র্যাক করুন</p>
+            </div>
+          </div>
+
+          {chartData.length > 0 ? (
+            <div className="h-[320px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis 
+                    dataKey="date" 
+                    tickLine={false} 
+                    axisLine={false} 
+                    fontSize={11} 
+                    stroke="#94a3b8" 
+                  />
+                  <YAxis 
+                    tickLine={false} 
+                    axisLine={false} 
+                    fontSize={11} 
+                    stroke="#94a3b8" 
+                    tickFormatter={(val) => `৳${val}`}
+                  />
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)', fontFamily: 'sans-serif', fontSize: '12px' }}
+                    formatter={(val) => [`৳${val}`, '']}
+                  />
+                  <Legend 
+                    iconType="circle"
+                    iconSize={8}
+                    wrapperStyle={{ fontSize: '11px', fontWeight: 'bold', paddingTop: '10px' }} 
+                  />
+                  {uniquePaymentMethods.map((method, index) => (
+                    <Bar
+                      key={method}
+                      dataKey={method}
+                      name={method.toUpperCase()}
+                      stackId="revenue"
+                      fill={getPaymentMethodColor(method, index)}
+                      maxBarSize={45}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-sm">
+              <p>সংগৃহীত পেমেন্টের কোনো তথ্য নেই।</p>
+              <p className="text-xs text-slate-400 mt-1">আবেদন কনফার্ম হওয়ার পর এখানে দৈনিক চার্ট দৃশ্যমান হবে।</p>
+            </div>
+          )}
         </div>
 
         {/* Settings Section */}
@@ -381,6 +564,193 @@ export default function AdminDashboard() {
             <div className="md:col-span-2">
               <label className="block text-sm font-semibold text-slate-700 mb-1">নোটিশ বোর্ড (খালি রাখলে নোটিশ লুকানো থাকবে)</label>
               <textarea rows={3} disabled={!isEditingSettings} value={settings.notice || ''} onChange={e => setSettings({...settings, notice: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 disabled:bg-slate-50 text-sm" placeholder="এখানে নোটিশ লিখুন..."></textarea>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-semibold text-slate-700 mb-1">এডমিন হোয়াটস্যাপ নম্বর (যে নম্বরে শিক্ষার্থীরা মেসেজ পাঠাবে) *</label>
+              <input type="tel" disabled={!isEditingSettings} value={settings.adminWhatsapp || ''} onChange={e => setSettings({...settings, adminWhatsapp: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 disabled:bg-slate-50 text-sm font-bold text-blue-600" placeholder="যেমন: 017XXXXXXXX" />
+            </div>
+
+            <div className="md:col-span-2 border-t border-slate-100 pt-6 mt-4 space-y-4">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">টি-শার্ট অর্ডার বন্ধ/চালু করার সেটিংস (Emergency Shutdown)</h3>
+                <p className="text-slate-400 text-xs mt-0.5">সব পেজের অ্যাক্সেস ও রেজিস্ট্রেশন সাময়িকভাবে নিষ্ক্রিয় করুন</p>
+              </div>
+
+              <div className="flex items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <input
+                  type="checkbox"
+                  id="isRegistrationActive"
+                  disabled={!isEditingSettings}
+                  checked={settings.isRegistrationActive !== false}
+                  onChange={e => setSettings({...settings, isRegistrationActive: e.target.checked})}
+                  className="h-5 w-5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer disabled:opacity-60"
+                />
+                <label htmlFor="isRegistrationActive" className="text-sm font-bold text-slate-700 cursor-pointer select-none">
+                  টি-শার্ট রেজিস্ট্রেশন ও ওয়েবসাইট কার্যক্রম চালু থাকবে (Active)
+                </label>
+              </div>
+
+              {settings.isRegistrationActive === false && (
+                <div className="space-y-1">
+                  <label className="block text-sm font-semibold text-slate-700">অর্ডার বন্ধকালীন সুন্দর বার্তা/মেসেজ</label>
+                  <textarea
+                    rows={2}
+                    disabled={!isEditingSettings}
+                    value={settings.registrationDisabledMessage || ''}
+                    onChange={e => setSettings({...settings, registrationDisabledMessage: e.target.value})}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 disabled:bg-slate-50 text-sm"
+                    placeholder="যেমন: টি-শার্ট অর্ডার কার্যক্রম সাময়িকভাবে বন্ধ আছে। দয়া করে পরবর্তী নোটিশের জন্য অপেক্ষা করুন।"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Payment Methods Config */}
+            <div className="md:col-span-2 border-t border-slate-100 pt-6 mt-4">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="font-bold text-slate-800 text-sm">পেমেন্ট মেথড সমূহ</h3>
+                  <p className="text-slate-400 text-xs mt-0.5">গ্রাহকদের জন্য সক্রিয় পেমেন্ট চ্যানেলগুলো এখানে সেট করুন।</p>
+                </div>
+                {isEditingSettings && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = 'pm_' + Date.now();
+                      const currentMethods = settings.paymentMethods || [];
+                      setSettings({
+                        ...settings,
+                        paymentMethods: [
+                          ...currentMethods,
+                          {
+                            id,
+                            name: '',
+                            logo: '',
+                            number: '',
+                            qrImage: '',
+                            active: true
+                          }
+                        ]
+                      });
+                    }}
+                    className="flex items-center gap-1.5 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-bold transition-all"
+                  >
+                    <Plus size={14} /> মেথড যোগ করুন
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                {(settings.paymentMethods || []).map((method, index) => (
+                  <div key={method.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200/65 relative space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-400">মেথড #{index + 1}</span>
+                      {isEditingSettings && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = (settings.paymentMethods || []).filter(pm => pm.id !== method.id);
+                            setSettings({ ...settings, paymentMethods: updated });
+                          }}
+                          className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          title="মুছে ফেলুন"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-500 mb-1">নাম *</label>
+                        <input
+                          type="text"
+                          required
+                          disabled={!isEditingSettings}
+                          value={method.name}
+                          onChange={e => {
+                            const updated = [...(settings.paymentMethods || [])];
+                            updated[index] = { ...updated[index], name: e.target.value };
+                            setSettings({ ...settings, paymentMethods: updated });
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 disabled:bg-slate-100 text-xs font-semibold"
+                          placeholder="যেমন: bKash, Nagad"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-500 mb-1">লোগো লিংক</label>
+                        <input
+                          type="text"
+                          disabled={!isEditingSettings}
+                          value={method.logo}
+                          onChange={e => {
+                            const updated = [...(settings.paymentMethods || [])];
+                            updated[index] = { ...updated[index], logo: e.target.value };
+                            setSettings({ ...settings, paymentMethods: updated });
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 disabled:bg-slate-100 text-xs"
+                          placeholder="Image URL"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-500 mb-1">নম্বর *</label>
+                        <input
+                          type="text"
+                          required
+                          disabled={!isEditingSettings}
+                          value={method.number}
+                          onChange={e => {
+                            const updated = [...(settings.paymentMethods || [])];
+                            updated[index] = { ...updated[index], number: e.target.value };
+                            setSettings({ ...settings, paymentMethods: updated });
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 disabled:bg-slate-100 text-xs font-bold text-slate-800"
+                          placeholder="01XXXXXXXXX"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-500 mb-1">QR ইমেজের লিংক</label>
+                        <input
+                          type="text"
+                          disabled={!isEditingSettings}
+                          value={method.qrImage}
+                          onChange={e => {
+                            const updated = [...(settings.paymentMethods || [])];
+                            updated[index] = { ...updated[index], qrImage: e.target.value };
+                            setSettings({ ...settings, paymentMethods: updated });
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 disabled:bg-slate-100 text-xs"
+                          placeholder="QR Code image URL"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="checkbox"
+                        id={`active-${method.id}`}
+                        disabled={!isEditingSettings}
+                        checked={method.active}
+                        onChange={e => {
+                          const updated = [...(settings.paymentMethods || [])];
+                          updated[index] = { ...updated[index], active: e.target.checked };
+                          setSettings({ ...settings, paymentMethods: updated });
+                        }}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-75 cursor-pointer"
+                      />
+                      <label htmlFor={`active-${method.id}`} className="text-xs font-semibold text-slate-600 select-none cursor-pointer">
+                        সক্রিয় রাখুন (Active Method)
+                      </label>
+                    </div>
+                  </div>
+                ))}
+
+                {(settings.paymentMethods || []).length === 0 && (
+                  <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    কোনো কাস্টম পেমেন্ট মেথড যোগ করা হয়নি।
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -446,10 +816,19 @@ export default function AdminDashboard() {
                       <span className="inline-block px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-bold">{app.size}</span>
                     </td>
                     <td className="p-3">
-                      <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${app.paymentMethod === 'BIKASH' ? 'bg-pink-100 text-pink-700' : 'bg-orange-100 text-orange-700'}`}>
-                        {app.paymentMethod}
-                      </span>
-                      {app.paymentMethod === 'BIKASH' && <p className="text-xs text-slate-500 mt-1">{app.bkashSender}</p>}
+                      <div className="flex flex-col gap-1">
+                        <div>
+                          <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                            {app.paymentMethod || 'CASH'}
+                          </span>
+                          {app.bkashSender && (
+                            <span className="text-[11px] text-slate-500 ml-1">({app.bkashSender})</span>
+                          )}
+                        </div>
+                        <p className="font-bold text-slate-700 text-xs">
+                          ৳ {app.amountPaid !== undefined && app.amountPaid !== null ? app.amountPaid : (app.sleeve === 'HALF' ? settings.priceHalf : settings.priceFull)}
+                        </p>
+                      </div>
                     </td>
                     <td className="p-3">
                       {app.status === 'confirmed' ? (
@@ -540,6 +919,150 @@ export default function AdminDashboard() {
               <div className="text-center py-8 text-slate-500">কোনো খরচ পাওয়া যায়নি।</div>
             )}
           </div>
+        </div>
+
+        {/* Student Queries Section */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <HelpCircle className="text-blue-600 animate-pulse" size={22} />
+                শিক্ষার্থীদের জিজ্ঞাসা ও প্রশ্নসমূহ ({studentQueries.length})
+              </h2>
+              <p className="text-slate-400 text-xs mt-0.5">শিক্ষার্থীদের পাঠানো বিভিন্ন প্রশ্ন ও সাহায্য বার্তাগুলো এখানে দেখুন</p>
+            </div>
+            <div className="flex gap-2">
+              <span className="px-3 py-1 bg-amber-100 text-amber-800 text-xs font-extrabold rounded-full">
+                পেন্ডিং: {studentQueries.filter(q => !q.replied).length}
+              </span>
+              <span className="px-3 py-1 bg-green-100 text-green-800 text-xs font-extrabold rounded-full">
+                সমাধানকৃত: {studentQueries.filter(q => q.replied).length}
+              </span>
+            </div>
+          </div>
+
+          {studentQueries.length === 0 ? (
+            <div className="text-center py-12 text-slate-400">
+              <MessageSquare size={40} className="mx-auto mb-3 opacity-30 text-slate-400 animate-pulse" />
+              <p className="font-semibold text-slate-600">কোনো জিজ্ঞাসা বা প্রশ্ন নেই।</p>
+              <p className="text-xs text-slate-400 mt-1">শিক্ষার্থীরা হোমপেজ থেকে কোনো প্রশ্ন পাঠালে তা এখানে দেখাবে।</p>
+            </div>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2">
+              {studentQueries.map(query => {
+                const matchedApp = findMatchingApplication(query.roll);
+                return (
+                  <div 
+                    key={query.id} 
+                    className={`p-5 rounded-2xl border transition-all duration-200 relative flex flex-col justify-between ${
+                      query.replied 
+                        ? 'bg-slate-50/70 border-slate-200/80' 
+                        : 'bg-white border-blue-100 shadow-sm hover:shadow-md hover:border-blue-200'
+                    }`}
+                  >
+                    <div>
+                      {/* Top bar of query card */}
+                      <div className="flex justify-between items-start gap-2 mb-3 border-b border-slate-100 pb-3">
+                        <div>
+                          <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-1.5 flex-wrap">
+                            {query.name}
+                            {query.replied ? (
+                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full">
+                                <Check size={10} /> সমাধানকৃত
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full">
+                                পেন্ডিং
+                              </span>
+                            )}
+                          </h3>
+                          <p className="text-xs font-bold text-slate-500 mt-0.5">
+                            রোল নম্বর: <span className="font-extrabold text-slate-700">{query.roll || 'N/A'}</span>
+                          </p>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-400 shrink-0">
+                          {formatQueryDate(query.timestamp)}
+                        </span>
+                      </div>
+
+                      {/* Matching application info */}
+                      {matchedApp ? (
+                        <div className="mb-4 p-3.5 bg-emerald-50/80 border border-emerald-200/50 rounded-xl text-xs space-y-1.5">
+                          <p className="font-extrabold text-emerald-800 flex items-center gap-1">
+                            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                            নিবন্ধনকারী পাওয়া গেছে (Registered Student)
+                          </p>
+                          <div className="grid grid-cols-2 gap-2 text-slate-600 font-semibold">
+                            <p>নাম: <span className="font-bold text-slate-800">{matchedApp.fullName}</span></p>
+                            <p>মোবাইল: <span className="font-bold text-slate-800">{matchedApp.whatsapp}</span></p>
+                            <p>সাইজ: <span className="font-bold text-blue-700">{matchedApp.sleeve} • {matchedApp.size}</span></p>
+                            <p>স্ট্যাটাস: <span className={`font-bold uppercase ${matchedApp.status === 'confirmed' ? 'text-green-600' : 'text-amber-500'}`}>{matchedApp.status === 'confirmed' ? 'নিশ্চিত' : 'পেন্ডিং'}</span></p>
+                          </div>
+                        </div>
+                      ) : query.roll && query.roll !== 'N/A' ? (
+                        <div className="mb-4 p-2.5 bg-slate-50 rounded-xl text-xs text-slate-400 font-semibold">
+                          এই রোল নম্বর ({query.roll}) দিয়ে এখনো কোনো টি-শার্ট রেজিস্ট্রেশন করা হয়নি।
+                        </div>
+                      ) : null}
+
+                      {/* Message body */}
+                      <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-200/40 text-slate-700 text-sm font-semibold whitespace-pre-wrap leading-relaxed mb-4">
+                        {query.message}
+                      </div>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-3 mt-2">
+                      <div>
+                        {matchedApp && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              let formattedPhone = matchedApp.whatsapp.replace(/\D/g, '');
+                              if (formattedPhone.startsWith('0')) {
+                                formattedPhone = '88' + formattedPhone;
+                              } else if (!formattedPhone.startsWith('88')) {
+                                formattedPhone = '880' + formattedPhone; 
+                              }
+                              const text = `আসসালামু আলাইকুম ${query.name}। আপনি টি-শার্ট ওয়েবসাইটে একটি জিজ্ঞাসা পাঠিয়েছিলেন:\n"${query.message}"\n\nআমরা আপনাকে সাহায্য করার জন্য যোগাযোগ করছি...`;
+                              const url = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`;
+                              window.open(url, '_blank');
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-100 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                          >
+                            <MessageCircle size={14} /> হোয়াটসঅ্যাপে চ্যাট
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleQueryReplied(query.id, !!query.replied)}
+                          className={`p-2 rounded-lg transition-colors cursor-pointer ${
+                            query.replied 
+                              ? 'text-slate-400 hover:bg-slate-100 hover:text-slate-600' 
+                              : 'text-green-600 bg-green-50 hover:bg-green-100'
+                          }`}
+                          title={query.replied ? "পেন্ডিং হিসেবে মার্ক করুন" : "সমাধান হিসেবে মার্ক করুন"}
+                        >
+                          {query.replied ? <MailOpen size={18} /> : <Mail size={18} />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteQuery(query.id)}
+                          className="p-2 text-red-500 hover:bg-red-50 hover:text-red-700 rounded-lg transition-colors cursor-pointer"
+                          title="জিজ্ঞাসা মুছে ফেলুন"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
       </div>
@@ -700,11 +1223,11 @@ export default function AdminDashboard() {
                     </tr>
                     <tr>
                       <td className="py-4 font-bold text-slate-500">Payment Amount</td>
-                      <td className="py-4 font-black text-slate-800">BDT {activeReceiptApp.sleeve === 'HALF' ? settings.priceHalf : settings.priceFull}</td>
+                      <td className="py-4 font-black text-slate-800">BDT {activeReceiptApp.amountPaid !== undefined && activeReceiptApp.amountPaid !== null ? activeReceiptApp.amountPaid : (activeReceiptApp.sleeve === 'HALF' ? settings.priceHalf : settings.priceFull)}</td>
                     </tr>
                     <tr>
                       <td className="py-4 font-bold text-slate-500">Payment Number</td>
-                      <td className="py-4 font-black text-slate-800">{activeReceiptApp.bkashSender || 'N/A'} ({activeReceiptApp.paymentMethod})</td>
+                      <td className="py-4 font-black text-slate-800">{activeReceiptApp.bkashSender || 'N/A'} ({activeReceiptApp.paymentMethod || 'CASH'})</td>
                     </tr>
                   </tbody>
                 </table>
@@ -750,6 +1273,35 @@ export default function AdminDashboard() {
                     {sizeOrder.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="text-sm font-semibold">টাকা পাঠানোর মাধ্যম</label>
+                  <select value={editingApp.paymentMethod || 'CASH'} onChange={e=>setEditingApp({...editingApp, paymentMethod: e.target.value})} className="w-full border rounded px-3 py-2">
+                    {(settings.paymentMethods || []).map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                    <option value="CASH">CASH (হাতে নগদ)</option>
+                  </select>
+                </div>
+                <div><label className="text-sm font-semibold">টাকা দিয়েছে (BDT) *</label>
+                  <input 
+                    type="number" 
+                    required
+                    value={editingApp.amountPaid !== undefined && editingApp.amountPaid !== null ? editingApp.amountPaid : (editingApp.sleeve === 'HALF' ? settings.priceHalf : settings.priceFull)} 
+                    onChange={e=>setEditingApp({...editingApp, amountPaid: Number(e.target.value)})} 
+                    className="w-full border rounded px-3 py-2 font-bold text-blue-600 outline-none focus:border-blue-500" 
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold block mb-1">সেন্ডার নম্বর / ট্রানজেকশন</label>
+                <input 
+                  type="text" 
+                  value={editingApp.bkashSender || ''} 
+                  onChange={e=>setEditingApp({...editingApp, bkashSender: e.target.value})} 
+                  className="w-full border rounded px-3 py-2 outline-none focus:border-blue-500" 
+                  placeholder="যেমন: 017XXXXXXXX"
+                />
               </div>
             </div>
             <button onClick={saveEditedApp} className="w-full mt-6 bg-blue-600 text-white font-bold py-3 rounded-xl">সেভ করুন</button>
