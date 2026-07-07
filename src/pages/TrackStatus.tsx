@@ -315,11 +315,11 @@ export default function TrackStatus() {
                   </tr>
                   <tr>
                     <td className="py-4 font-bold text-slate-500">Payment Amount</td>
-                    <td className="py-4 font-black text-slate-800">BDT {result.sleeve === 'HALF' ? settings.priceHalf : settings.priceFull}</td>
+                    <td className="py-4 font-black text-slate-800">BDT {result.amountPaid !== undefined && result.amountPaid !== null ? result.amountPaid : (result.sleeve === 'HALF' ? settings.priceHalf : settings.priceFull)}</td>
                   </tr>
                   <tr>
                     <td className="py-4 font-bold text-slate-500">Payment Number</td>
-                    <td className="py-4 font-black text-slate-800">{result.bkashSender || 'N/A'} ({result.paymentMethod})</td>
+                    <td className="py-4 font-black text-slate-800">{result.bkashSender || 'N/A'} ({result.paymentMethod || 'CASH'})</td>
                   </tr>
                 </tbody>
               </table>
