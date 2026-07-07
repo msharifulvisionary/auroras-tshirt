@@ -49,6 +49,7 @@ export interface StudentQuery {
   id: string;
   name: string;
   roll: string;
+  whatsapp?: string;
   message: string;
   timestamp: number;
   replied?: boolean;
