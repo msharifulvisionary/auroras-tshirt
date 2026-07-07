@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -7,15 +7,44 @@ import { AnimatePresence, motion } from 'motion/react';
 export function Navbar() {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isAdminMenuUnlocked, setIsAdminMenuUnlocked] = useState(
+    sessionStorage.getItem('isAdminMenuUnlocked') === 'true'
+  );
 
   const isAdminLoggedIn = localStorage.getItem('isAdminLoggedIn') === 'true';
+
+  useEffect(() => {
+    // Clear any legacy localStorage values to instantly hide the admin button for existing users
+    if (localStorage.getItem('isAdminMenuUnlocked')) {
+      localStorage.removeItem('isAdminMenuUnlocked');
+    }
+
+    const handleMenuChanged = () => {
+      setIsAdminMenuUnlocked(sessionStorage.getItem('isAdminMenuUnlocked') === 'true');
+    };
+
+    window.addEventListener('admin-menu-unlocked-event', handleMenuChanged);
+    // Also listen to general storage changes (e.g. logouts)
+    window.addEventListener('storage', handleMenuChanged);
+
+    return () => {
+      window.removeEventListener('admin-menu-unlocked-event', handleMenuChanged);
+      window.removeEventListener('storage', handleMenuChanged);
+    };
+  }, []);
 
   const navLinks = [
     { name: 'হোম', path: '/' },
     { name: 'আবেদন', path: '/apply' },
-    { name: 'স্ট্যাটাস', path: '/track' },
-    { name: isAdminLoggedIn ? 'ড্যাশবোর্ড' : 'এডমিন', path: isAdminLoggedIn ? '/admin/dashboard' : '/admin' }
+    { name: 'স্ট্যাটাস', path: '/track' }
   ];
+
+  if (isAdminMenuUnlocked) {
+    navLinks.push({
+      name: isAdminLoggedIn ? 'ড্যাশবোর্ড' : 'এডমিন',
+      path: isAdminLoggedIn ? '/admin/dashboard' : '/admin'
+    });
+  }
 
   return (
     <header className="sticky top-0 z-40 w-full bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm">
