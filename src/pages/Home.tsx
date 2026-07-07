@@ -20,6 +20,7 @@ export default function Home() {
   const [isQueryModalOpen, setIsQueryModalOpen] = useState(false);
   const [queryName, setQueryName] = useState('');
   const [queryRoll, setQueryRoll] = useState('');
+  const [queryWhatsapp, setQueryWhatsapp] = useState('');
   const [queryMessage, setQueryMessage] = useState('');
   const [isSubmittingQuery, setIsSubmittingQuery] = useState(false);
   const [querySuccess, setQuerySuccess] = useState(false);
@@ -34,19 +35,21 @@ export default function Home() {
 
   const handleQuerySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!queryName || !queryMessage) return;
+    if (!queryName || !queryWhatsapp || !queryMessage) return;
 
     setIsSubmittingQuery(true);
     try {
       await push(ref(db, 'faq_questions'), {
         name: queryName,
         roll: queryRoll || 'N/A',
+        whatsapp: queryWhatsapp,
         message: queryMessage,
         timestamp: Date.now()
       });
       setQuerySuccess(true);
       setQueryName('');
       setQueryRoll('');
+      setQueryWhatsapp('');
       setQueryMessage('');
       setTimeout(() => {
         setIsQueryModalOpen(false);
@@ -632,6 +635,19 @@ export default function Home() {
                       value={queryRoll}
                       onChange={e => setQueryRoll(e.target.value)}
                       placeholder="যেমন: ১২৩৪৫৬"
+                      className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-bold font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-600">হোয়াটসঅ্যাপ নম্বর (WhatsApp No) <span className="text-red-500">*</span></label>
+                    <input
+                      type="tel"
+                      required
+                      disabled={isSubmittingQuery}
+                      value={queryWhatsapp}
+                      onChange={e => setQueryWhatsapp(e.target.value)}
+                      placeholder="যেমন: 017XXXXXXXX"
                       className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-bold font-mono"
                     />
                   </div>
