@@ -979,6 +979,11 @@ export default function AdminDashboard() {
                           <p className="text-xs font-bold text-slate-500 mt-0.5">
                             রোল নম্বর: <span className="font-extrabold text-slate-700">{query.roll || 'N/A'}</span>
                           </p>
+                          {query.whatsapp && query.whatsapp !== 'N/A' && (
+                            <p className="text-xs font-bold text-slate-500 mt-0.5">
+                              হোয়াটসঅ্যাপ: <span className="font-extrabold text-emerald-600 font-mono">{query.whatsapp}</span>
+                            </p>
+                          )}
                         </div>
                         <span className="text-[10px] font-bold text-slate-400 shrink-0">
                           {formatQueryDate(query.timestamp)}
@@ -1014,11 +1019,13 @@ export default function AdminDashboard() {
                     {/* Action buttons */}
                     <div className="flex items-center justify-between border-t border-slate-100 pt-3 mt-2">
                       <div>
-                        {matchedApp && (
+                        {(query.whatsapp || matchedApp) && (
                           <button
                             type="button"
                             onClick={() => {
-                              let formattedPhone = matchedApp.whatsapp.replace(/\D/g, '');
+                              const targetPhone = query.whatsapp || (matchedApp ? matchedApp.whatsapp : '');
+                              if (!targetPhone || targetPhone === 'N/A') return;
+                              let formattedPhone = targetPhone.replace(/\D/g, '');
                               if (formattedPhone.startsWith('0')) {
                                 formattedPhone = '88' + formattedPhone;
                               } else if (!formattedPhone.startsWith('88')) {
