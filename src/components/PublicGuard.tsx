@@ -58,13 +58,13 @@ export default function PublicGuard() {
           <p className="text-slate-500 text-sm font-medium">টি-শার্ট অর্ডার এবং রেজিস্ট্রেশন কার্যক্রম বর্তমানে নিষ্ক্রিয় রয়েছে।</p>
         </div>
 
-        <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200/60 rounded-2xl p-6 text-slate-700 font-bold text-sm leading-relaxed text-center shadow-inner">
+        <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200/60 rounded-2xl p-6 text-slate-700 font-bold text-sm leading-relaxed text-left shadow-inner whitespace-pre-wrap">
           {settings.registrationDisabledMessage || "টি-শার্ট অর্ডার কার্যক্রম সাময়িকভাবে বন্ধ আছে। দয়া করে পরবর্তী নোটিশের জন্য অপেক্ষা করুন।"}
         </div>
 
         <div className="pt-4 border-t border-slate-100 flex flex-col items-center">
           <p className="text-xs text-slate-500 font-semibold bg-slate-100 px-3 py-1.5 rounded-full">
-            যেকোনো প্রয়োজনে সংশ্লিষ্ট আয়োজক এর সাথে যোগাযোগ করুন।
+            যেকোনো প্রয়োজনে সংশ্লিষ্ট পরিচালনা কমিটির সাথে যোগাযোগ করুন।
           </p>
         </div>
       </motion.div>
