@@ -8,19 +8,16 @@ export function Navbar() {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAdminMenuUnlocked, setIsAdminMenuUnlocked] = useState(
-    sessionStorage.getItem('isAdminMenuUnlocked') === 'true'
+    localStorage.getItem('isAdminMenuUnlocked') === 'true'
+  );
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(
+    localStorage.getItem('isAdminLoggedIn') === 'true'
   );
 
-  const isAdminLoggedIn = localStorage.getItem('isAdminLoggedIn') === 'true';
-
   useEffect(() => {
-    // Clear any legacy localStorage values to instantly hide the admin button for existing users
-    if (localStorage.getItem('isAdminMenuUnlocked')) {
-      localStorage.removeItem('isAdminMenuUnlocked');
-    }
-
     const handleMenuChanged = () => {
-      setIsAdminMenuUnlocked(sessionStorage.getItem('isAdminMenuUnlocked') === 'true');
+      setIsAdminMenuUnlocked(localStorage.getItem('isAdminMenuUnlocked') === 'true');
+      setIsAdminLoggedIn(localStorage.getItem('isAdminLoggedIn') === 'true');
     };
 
     window.addEventListener('admin-menu-unlocked-event', handleMenuChanged);
@@ -39,7 +36,7 @@ export function Navbar() {
     { name: 'স্ট্যাটাস', path: '/track' }
   ];
 
-  if (isAdminMenuUnlocked) {
+  if (isAdminMenuUnlocked || isAdminLoggedIn) {
     navLinks.push({
       name: isAdminLoggedIn ? 'ড্যাশবোর্ড' : 'এডমিন',
       path: isAdminLoggedIn ? '/admin/dashboard' : '/admin'
