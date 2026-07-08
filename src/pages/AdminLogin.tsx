@@ -18,6 +18,8 @@ export default function AdminLogin() {
     e.preventDefault();
     if (username === 'msharifulvisionary' && password === 'ahcphysics@adminlogin') {
       localStorage.setItem('isAdminLoggedIn', 'true');
+      localStorage.setItem('isAdminMenuUnlocked', 'true');
+      window.dispatchEvent(new Event('admin-menu-unlocked-event'));
       navigate('/admin/dashboard');
     } else {
       setError('ভুল ইউজারনেম বা পাসওয়ার্ড!');
