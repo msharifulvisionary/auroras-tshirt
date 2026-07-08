@@ -26,7 +26,7 @@ export function Footer() {
   const handleUnlockSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (username === 'msharifulvisionary' && password === 'ahcphysics@adminlogin') {
-      sessionStorage.setItem('isAdminMenuUnlocked', 'true');
+      localStorage.setItem('isAdminMenuUnlocked', 'true');
       setSuccess(true);
       setTimeout(() => {
         setIsModalOpen(false);
